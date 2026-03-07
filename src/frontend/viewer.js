@@ -149,6 +149,7 @@ var Viewer = (function() {
       actualSize();
     } else {
       fitToWindow();
+      showZoomToast();
     }
   });
 
@@ -184,7 +185,7 @@ var Viewer = (function() {
 
   return {
     setImage: setImage,
-    fitToWindow: fitToWindow,
+    fitToWindow: function() { fitToWindow(); showZoomToast(); },
     actualSize: actualSize,
     zoomIn: function() { zoomAtCenter(snapScale(state.scale, state.scale * 1.25)); },
     zoomOut: function() { zoomAtCenter(snapScale(state.scale, state.scale / 1.25)); },

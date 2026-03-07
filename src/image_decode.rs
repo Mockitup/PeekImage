@@ -135,6 +135,9 @@ fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, Stri
 
     let (width, height) = (img.width(), img.height());
 
+    // Convert float formats (HDR/EXR Rgb32F) to 8-bit RGBA for PNG encoding
+    let img = image::DynamicImage::ImageRgba8(img.to_rgba8());
+
     let img = if width > MAX_DIMENSION || height > MAX_DIMENSION {
         let resized = img.resize(
             MAX_DIMENSION,
@@ -162,6 +165,7 @@ fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, Stri
         "pnm" | "pbm" | "pgm" | "ppm" | "pam" => "PNM",
         "qoi" => "QOI",
         "hdr" => "HDR",
+        "exr" => "EXR",
         _ => "Image",
     }
     .to_string();
@@ -178,6 +182,6 @@ fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, Stri
 pub fn supported_extensions() -> &'static [&'static str] {
     &[
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "tiff", "tif", "tga", "pnm",
-        "pbm", "pgm", "ppm", "pam", "qoi", "hdr",
+        "pbm", "pgm", "ppm", "pam", "qoi", "hdr", "exr",
     ]
 }
