@@ -191,5 +191,14 @@ var Viewer = (function() {
     zoomIn: function() { zoomAtCenter(snapScale(state.scale, state.scale * 1.25)); },
     zoomOut: function() { zoomAtCenter(snapScale(state.scale, state.scale / 1.25)); },
     getScale: function() { return state.scale; },
+    screenToImage: function(cx, cy) {
+      var rect = viewport.getBoundingClientRect();
+      var mx = cx - rect.left;
+      var my = cy - rect.top;
+      var ix = Math.floor((mx - state.panX) / state.scale);
+      var iy = Math.floor((my - state.panY) / state.scale);
+      if (ix < 0 || iy < 0 || ix >= state.naturalWidth || iy >= state.naturalHeight) return null;
+      return { x: ix, y: iy };
+    },
   };
 })();

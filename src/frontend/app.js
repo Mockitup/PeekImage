@@ -255,6 +255,44 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+// Pixel inspection
+(function() {
+  var vp = document.getElementById('viewport');
+  var elPixel = document.getElementById('status-pixel');
+  var elSwatch = document.getElementById('pixel-swatch');
+  var elRgba = document.getElementById('pixel-rgba');
+  var elHex = document.getElementById('pixel-hex');
+
+  function clamp8(v) { return Math.max(0, Math.min(255, Math.floor(v))); }
+
+  function updatePixelInfo(px) {
+    var r8 = px.isHdr ? clamp8(px.r * 255) : px.r;
+    var g8 = px.isHdr ? clamp8(px.g * 255) : px.g;
+    var b8 = px.isHdr ? clamp8(px.b * 255) : px.b;
+    elSwatch.style.backgroundColor = 'rgb(' + r8 + ',' + g8 + ',' + b8 + ')';
+    if (px.isHdr) {
+      elRgba.textContent = 'RGBA(' + px.r.toFixed(3) + ', ' + px.g.toFixed(3) + ', ' + px.b.toFixed(3) + ', ' + px.a.toFixed(3) + ')';
+    } else {
+      elRgba.textContent = 'RGBA(' + px.r + ', ' + px.g + ', ' + px.b + ', ' + px.a + ')';
+    }
+    var hex = '#' + ('0' + r8.toString(16)).slice(-2) + ('0' + g8.toString(16)).slice(-2) + ('0' + b8.toString(16)).slice(-2);
+    elHex.textContent = hex.toUpperCase();
+    elPixel.style.display = '';
+  }
+
+  vp.addEventListener('mousemove', function(e) {
+    var coord = Viewer.screenToImage(e.clientX, e.clientY);
+    if (!coord) { elPixel.style.display = 'none'; return; }
+    var px = Renderer.getPixel(coord.x, coord.y);
+    if (!px) { elPixel.style.display = 'none'; return; }
+    updatePixelInfo(px);
+  });
+
+  vp.addEventListener('mouseleave', function() {
+    elPixel.style.display = 'none';
+  });
+})();
+
 // Init
 document.addEventListener('DOMContentLoaded', function() {
   var saved = null;

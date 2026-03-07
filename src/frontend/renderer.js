@@ -128,6 +128,7 @@ var Renderer = (function() {
   var _panX = 0, _panY = 0, _scale = 1;
   var _exposure = 0;
   var _bgMode = 0;
+  var _pixelData = null;
 
   function parseThemeColor(varName) {
     var val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -218,6 +219,13 @@ var Renderer = (function() {
     _isHdr = false;
     _hasImage = true;
     _exposure = 0;
+    // Extract pixel data via offscreen canvas
+    var oc = document.createElement('canvas');
+    oc.width = _imageW;
+    oc.height = _imageH;
+    var ctx = oc.getContext('2d');
+    ctx.drawImage(htmlImage, 0, 0);
+    _pixelData = ctx.getImageData(0, 0, _imageW, _imageH).data;
   }
 
   function uploadHDR(arrayBuffer, w, h) {
@@ -232,6 +240,7 @@ var Renderer = (function() {
     _isHdr = true;
     _hasImage = true;
     _exposure = 0;
+    _pixelData = floatData;
   }
 
   return {
@@ -244,6 +253,11 @@ var Renderer = (function() {
     render: render,
     resize: resize,
     hasImage: function() { return _hasImage; },
-    clearImage: function() { _hasImage = false; }
+    clearImage: function() { _hasImage = false; _pixelData = null; },
+    getPixel: function(x, y) {
+      if (!_pixelData || x < 0 || y < 0 || x >= _imageW || y >= _imageH) return null;
+      var idx = (y * _imageW + x) * 4;
+      return { r: _pixelData[idx], g: _pixelData[idx+1], b: _pixelData[idx+2], a: _pixelData[idx+3], isHdr: _isHdr };
+    }
   };
 })();

@@ -340,8 +340,38 @@ html, body {
   color: var(--text-dim);
 }
 
-#status-nav {
+#status-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-left: auto;
+}
+
+#status-pixel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#pixel-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+#pixel-rgba {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+#pixel-hex {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+#status-nav {
   color: var(--text-secondary);
 }
 
