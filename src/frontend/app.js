@@ -9,14 +9,25 @@ var currentPath = null;
 var loading = false;
 var bgModes = ['checker', 'black', 'white'];
 var bgModeIndex = 0;
+var isHdr = false;
+var exposureTimer = null;
+var exposureUpdate = false;
 
 // Rust -> JS
 window.__fromRust = function(event, data) {
   switch (event) {
     case 'image_loaded':
       currentPath = data.path;
+      isHdr = !!data.is_hdr;
+      document.getElementById('hdr-sep').style.display = isHdr ? '' : 'none';
+      document.getElementById('hdr-controls').style.display = isHdr ? '' : 'none';
+      if (isHdr) {
+        document.getElementById('exposure-slider').value = 0;
+        document.getElementById('exposure-value').textContent = '0.0';
+      }
       var imgEl = document.getElementById('image');
       imgEl.onload = function() {
+        if (exposureUpdate) { exposureUpdate = false; return; }
         loading = false;
         document.getElementById('loading-spinner').classList.remove('visible');
         document.getElementById('welcome-panel').style.display = 'none';
@@ -38,6 +49,10 @@ window.__fromRust = function(event, data) {
       break;
     case 'copied':
       showStatus('Copied to clipboard');
+      break;
+    case 'exposure_updated':
+      exposureUpdate = true;
+      document.getElementById('image').src = data.data_uri;
       break;
     case 'error':
       loading = false;
@@ -139,6 +154,16 @@ document.getElementById('btn-next').addEventListener('click', function() {
 document.getElementById('btn-fit').addEventListener('click', function() { Viewer.fitToWindow(); });
 document.getElementById('btn-actual').addEventListener('click', function() { Viewer.actualSize(); });
 
+// Exposure Slider
+document.getElementById('exposure-slider').addEventListener('input', function() {
+  var val = parseFloat(this.value);
+  document.getElementById('exposure-value').textContent = val.toFixed(1);
+  clearTimeout(exposureTimer);
+  exposureTimer = setTimeout(function() {
+    sendToRust('set_exposure', { exposure: val });
+  }, 120);
+});
+
 // Keyboard Shortcuts
 document.addEventListener('keydown', function(e) {
   if (e.ctrlKey && e.key === 'c') {
@@ -173,6 +198,14 @@ document.addEventListener('keydown', function(e) {
     if (e.ctrlKey) return;
     e.preventDefault();
     cycleBgMode();
+  } else if (e.key === 'e' || e.key === 'E') {
+    if (e.ctrlKey) return;
+    e.preventDefault();
+    if (isHdr) {
+      document.getElementById('exposure-slider').value = 0;
+      document.getElementById('exposure-value').textContent = '0.0';
+      sendToRust('set_exposure', { exposure: 0 });
+    }
   }
 });
 

@@ -15,13 +15,15 @@ struct IpcMessage {
     path: Option<String>,
     #[serde(default)]
     title: Option<String>,
+    #[serde(default)]
+    exposure: Option<f32>,
 }
 
 pub fn handle_ipc_message(
     msg: &str,
     webview: &WebView,
     window: &Window,
-    _state: &Arc<Mutex<AppState>>,
+    state: &Arc<Mutex<AppState>>,
 ) {
     let parsed: IpcMessage = match serde_json::from_str(msg) {
         Ok(m) => m,
@@ -35,7 +37,7 @@ pub fn handle_ipc_message(
         "open_image" => {
             let path = parsed.path.or_else(file_ops::pick_open_image);
             if let Some(p) = path {
-                load_and_send_image(webview, &p);
+                load_and_send_image(webview, &p, state);
             } else {
                 send_loading_done(webview);
             }
@@ -43,7 +45,7 @@ pub fn handle_ipc_message(
         "next_image" => {
             if let Some(ref current) = parsed.path {
                 if let Some((next, idx, total)) = file_ops::get_sibling_image(current, 1) {
-                    load_and_send_image_with_pos(webview, &next, idx, total);
+                    load_and_send_image_with_pos(webview, &next, idx, total, state);
                 } else {
                     send_loading_done(webview);
                 }
@@ -54,13 +56,40 @@ pub fn handle_ipc_message(
         "prev_image" => {
             if let Some(ref current) = parsed.path {
                 if let Some((prev, idx, total)) = file_ops::get_sibling_image(current, -1) {
-                    load_and_send_image_with_pos(webview, &prev, idx, total);
+                    load_and_send_image_with_pos(webview, &prev, idx, total, state);
                 } else {
                     send_loading_done(webview);
                 }
             } else {
                 send_loading_done(webview);
             }
+        }
+        "set_exposure" => {
+            let ev = parsed.exposure.unwrap_or(0.0);
+            let st = state.lock().unwrap();
+            if let Some(ref img) = st.hdr_image {
+                match image_decode::apply_exposure(img, ev, 8192) {
+                    Ok((data_uri, w, h)) => {
+                        send_to_js(
+                            webview,
+                            "exposure_updated",
+                            &serde_json::json!({
+                                "data_uri": data_uri,
+                                "width": w,
+                                "height": h,
+                            }),
+                        );
+                    }
+                    Err(e) => {
+                        send_to_js(
+                            webview,
+                            "error",
+                            &serde_json::json!({"message": e}),
+                        );
+                    }
+                }
+            }
+            drop(st);
         }
         "set_title" => {
             if let Some(title) = parsed.title {
@@ -104,38 +133,63 @@ pub fn handle_ipc_message(
                 }
             }
         }
-        "paste_image" => match paste_image_from_clipboard() {
-            Ok((data_uri, width, height, size)) => {
-                send_to_js(
-                    webview,
-                    "image_loaded",
-                    &serde_json::json!({
-                        "path": "",
-                        "data_uri": data_uri,
-                        "width": width,
-                        "height": height,
-                        "file_size": size,
-                        "format": "Clipboard",
-                        "filename": "Clipboard",
-                        "index": 0,
-                        "total": 0,
-                    }),
-                );
+        "paste_image" => {
+            // Clear HDR cache on paste
+            {
+                let mut st = state.lock().unwrap();
+                st.hdr_image = None;
+                st.hdr_path = None;
             }
-            Err(e) => send_to_js(
-                webview,
-                "error",
-                &serde_json::json!({"message": e}),
-            ),
-        },
+            match paste_image_from_clipboard() {
+                Ok((data_uri, width, height, size)) => {
+                    send_to_js(
+                        webview,
+                        "image_loaded",
+                        &serde_json::json!({
+                            "path": "",
+                            "data_uri": data_uri,
+                            "width": width,
+                            "height": height,
+                            "file_size": size,
+                            "format": "Clipboard",
+                            "filename": "Clipboard",
+                            "index": 0,
+                            "total": 0,
+                            "is_hdr": false,
+                        }),
+                    );
+                }
+                Err(e) => send_to_js(
+                    webview,
+                    "error",
+                    &serde_json::json!({"message": e}),
+                ),
+            }
+        }
         "ready" => {}
         _ => eprintln!("Unknown IPC command: {}", parsed.command),
     }
 }
 
-fn load_and_send_image_with_pos(webview: &WebView, path: &str, index: usize, total: usize) {
+fn load_and_send_image_with_pos(
+    webview: &WebView,
+    path: &str,
+    index: usize,
+    total: usize,
+    state: &Arc<Mutex<AppState>>,
+) {
     match image_decode::load_image(path) {
-        Ok(info) => {
+        Ok((info, hdr_cache)) => {
+            {
+                let mut st = state.lock().unwrap();
+                st.hdr_image = hdr_cache;
+                st.hdr_path = if info.is_hdr {
+                    Some(path.to_string())
+                } else {
+                    None
+                };
+            }
+
             let filename = std::path::Path::new(path)
                 .file_name()
                 .and_then(|n| n.to_str())
@@ -154,6 +208,7 @@ fn load_and_send_image_with_pos(webview: &WebView, path: &str, index: usize, tot
                     "filename": filename,
                     "index": index,
                     "total": total,
+                    "is_hdr": info.is_hdr,
                 }),
             );
         }
@@ -169,9 +224,19 @@ fn load_and_send_image_with_pos(webview: &WebView, path: &str, index: usize, tot
     }
 }
 
-fn load_and_send_image(webview: &WebView, path: &str) {
+fn load_and_send_image(webview: &WebView, path: &str, state: &Arc<Mutex<AppState>>) {
     match image_decode::load_image(path) {
-        Ok(info) => {
+        Ok((info, hdr_cache)) => {
+            {
+                let mut st = state.lock().unwrap();
+                st.hdr_image = hdr_cache;
+                st.hdr_path = if info.is_hdr {
+                    Some(path.to_string())
+                } else {
+                    None
+                };
+            }
+
             let (index, total) = file_ops::get_image_position(path);
             let filename = std::path::Path::new(path)
                 .file_name()
@@ -191,6 +256,7 @@ fn load_and_send_image(webview: &WebView, path: &str) {
                     "filename": filename,
                     "index": index,
                     "total": total,
+                    "is_hdr": info.is_hdr,
                 }),
             );
         }

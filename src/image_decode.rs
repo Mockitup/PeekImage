@@ -8,13 +8,18 @@ pub struct ImageInfo {
     pub height: u32,
     pub file_size: u64,
     pub format: String,
+    pub is_hdr: bool,
 }
 
 const MAX_DIMENSION: u32 = 8192;
 
 const WEB_NATIVE: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico"];
 
-pub fn load_image(path: &str) -> Result<ImageInfo, String> {
+pub fn is_hdr_format(ext: &str) -> bool {
+    matches!(ext, "hdr" | "exr")
+}
+
+pub fn load_image(path: &str) -> Result<(ImageInfo, Option<image::DynamicImage>), String> {
     let p = Path::new(path);
     let ext = p
         .extension()
@@ -27,14 +32,58 @@ pub fn load_image(path: &str) -> Result<ImageInfo, String> {
         .map_err(|e| format!("Cannot read file: {}", e))?;
 
     if ext == "svg" {
-        return load_svg(path, file_size);
+        return load_svg(path, file_size).map(|info| (info, None));
     }
 
     if WEB_NATIVE.contains(&ext.as_str()) {
-        load_web_native(path, &ext, file_size)
+        load_web_native(path, &ext, file_size).map(|info| (info, None))
     } else {
         load_decoded(path, &ext, file_size)
     }
+}
+
+pub fn apply_exposure(
+    img: &image::DynamicImage,
+    exposure: f32,
+    max_dim: u32,
+) -> Result<(String, u32, u32), String> {
+    let rgb = img.to_rgb32f();
+    let (orig_w, orig_h) = (rgb.width(), rgb.height());
+    let multiplier = 2.0f32.powf(exposure);
+
+    let mut rgba = image::RgbaImage::new(orig_w, orig_h);
+    for (x, y, pixel) in rgb.enumerate_pixels() {
+        let r = (pixel[0] * multiplier).clamp(0.0, 1.0);
+        let g = (pixel[1] * multiplier).clamp(0.0, 1.0);
+        let b = (pixel[2] * multiplier).clamp(0.0, 1.0);
+        rgba.put_pixel(
+            x,
+            y,
+            image::Rgba([
+                (r * 255.0 + 0.5) as u8,
+                (g * 255.0 + 0.5) as u8,
+                (b * 255.0 + 0.5) as u8,
+                255,
+            ]),
+        );
+    }
+
+    let mut dyn_img = image::DynamicImage::ImageRgba8(rgba);
+    if orig_w > max_dim || orig_h > max_dim {
+        dyn_img = dyn_img.resize(max_dim, max_dim, image::imageops::FilterType::Lanczos3);
+    }
+    let (w, h) = (dyn_img.width(), dyn_img.height());
+
+    let mut buf = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut buf);
+    dyn_img
+        .write_to(&mut cursor, image::ImageFormat::Jpeg)
+        .map_err(|e| format!("Cannot encode image: {}", e))?;
+
+    let b64 = STANDARD.encode(&buf);
+    let data_uri = format!("data:image/jpeg;base64,{}", b64);
+
+    Ok((data_uri, w, h))
 }
 
 fn load_svg(path: &str, file_size: u64) -> Result<ImageInfo, String> {
@@ -52,6 +101,7 @@ fn load_svg(path: &str, file_size: u64) -> Result<ImageInfo, String> {
         height,
         file_size,
         format: "SVG".to_string(),
+        is_hdr: false,
     })
 }
 
@@ -124,40 +174,42 @@ fn load_web_native(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, S
         height,
         file_size,
         format,
+        is_hdr: false,
     })
 }
 
-fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, String> {
+fn load_decoded(
+    path: &str,
+    ext: &str,
+    file_size: u64,
+) -> Result<(ImageInfo, Option<image::DynamicImage>), String> {
     let data = std::fs::read(path).map_err(|e| format!("Cannot read file: {}", e))?;
 
     let img =
         image::load_from_memory(&data).map_err(|e| format!("Cannot decode image: {}", e))?;
 
     let (width, height) = (img.width(), img.height());
+    let is_hdr = is_hdr_format(ext);
 
-    // Convert float formats (HDR/EXR Rgb32F) to 8-bit RGBA for PNG encoding
-    let img = image::DynamicImage::ImageRgba8(img.to_rgba8());
-
-    let img = if width > MAX_DIMENSION || height > MAX_DIMENSION {
-        let resized = img.resize(
-            MAX_DIMENSION,
-            MAX_DIMENSION,
-            image::imageops::FilterType::Lanczos3,
-        );
-        resized
+    let (data_uri, disp_w, disp_h) = if is_hdr {
+        apply_exposure(&img, 0.0, MAX_DIMENSION)?
     } else {
-        img
+        let rgba = image::DynamicImage::ImageRgba8(img.to_rgba8());
+        let rgba = if width > MAX_DIMENSION || height > MAX_DIMENSION {
+            rgba.resize(MAX_DIMENSION, MAX_DIMENSION, image::imageops::FilterType::Lanczos3)
+        } else {
+            rgba
+        };
+        let (dw, dh) = (rgba.width(), rgba.height());
+
+        let mut buf = Vec::new();
+        let mut cursor = std::io::Cursor::new(&mut buf);
+        rgba.write_to(&mut cursor, image::ImageFormat::Png)
+            .map_err(|e| format!("Cannot encode image: {}", e))?;
+
+        let b64 = STANDARD.encode(&buf);
+        (format!("data:image/png;base64,{}", b64), dw, dh)
     };
-
-    let (width, height) = (img.width(), img.height());
-
-    let mut buf = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut buf);
-    img.write_to(&mut cursor, image::ImageFormat::Png)
-        .map_err(|e| format!("Cannot encode image: {}", e))?;
-
-    let b64 = STANDARD.encode(&buf);
-    let data_uri = format!("data:image/png;base64,{}", b64);
 
     let format = match ext {
         "tiff" | "tif" => "TIFF",
@@ -170,13 +222,19 @@ fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, Stri
     }
     .to_string();
 
-    Ok(ImageInfo {
-        data_uri,
-        width,
-        height,
-        file_size,
-        format,
-    })
+    let hdr_cache = if is_hdr { Some(img) } else { None };
+
+    Ok((
+        ImageInfo {
+            data_uri,
+            width: disp_w,
+            height: disp_h,
+            file_size,
+            format,
+            is_hdr,
+        },
+        hdr_cache,
+    ))
 }
 
 pub fn supported_extensions() -> &'static [&'static str] {

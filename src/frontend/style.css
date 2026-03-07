@@ -122,6 +122,57 @@ html, body {
   opacity: 0.5;
 }
 
+/* ---- HDR Exposure Controls ---- */
+#hdr-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+#exposure-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+#exposure-value {
+  font-size: 10px;
+  color: var(--text-secondary);
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#exposure-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+#exposure-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+#exposure-slider::-webkit-slider-thumb:hover {
+  background: var(--accent-hover);
+}
+
 #titlebar-title {
   flex: 1;
   overflow: hidden;
