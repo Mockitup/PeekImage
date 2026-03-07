@@ -36,20 +36,30 @@ pub fn handle_ipc_message(
             let path = parsed.path.or_else(file_ops::pick_open_image);
             if let Some(p) = path {
                 load_and_send_image(webview, &p);
+            } else {
+                send_loading_done(webview);
             }
         }
         "next_image" => {
             if let Some(ref current) = parsed.path {
-                if let Some(next) = file_ops::get_sibling_image(current, 1) {
-                    load_and_send_image(webview, &next);
+                if let Some((next, idx, total)) = file_ops::get_sibling_image(current, 1) {
+                    load_and_send_image_with_pos(webview, &next, idx, total);
+                } else {
+                    send_loading_done(webview);
                 }
+            } else {
+                send_loading_done(webview);
             }
         }
         "prev_image" => {
             if let Some(ref current) = parsed.path {
-                if let Some(prev) = file_ops::get_sibling_image(current, -1) {
-                    load_and_send_image(webview, &prev);
+                if let Some((prev, idx, total)) = file_ops::get_sibling_image(current, -1) {
+                    load_and_send_image_with_pos(webview, &prev, idx, total);
+                } else {
+                    send_loading_done(webview);
                 }
+            } else {
+                send_loading_done(webview);
             }
         }
         "set_title" => {
@@ -120,6 +130,42 @@ pub fn handle_ipc_message(
         },
         "ready" => {}
         _ => eprintln!("Unknown IPC command: {}", parsed.command),
+    }
+}
+
+fn load_and_send_image_with_pos(webview: &WebView, path: &str, index: usize, total: usize) {
+    match image_decode::load_image(path) {
+        Ok(info) => {
+            let filename = std::path::Path::new(path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown");
+
+            send_to_js(
+                webview,
+                "image_loaded",
+                &serde_json::json!({
+                    "path": path,
+                    "data_uri": info.data_uri,
+                    "width": info.width,
+                    "height": info.height,
+                    "file_size": info.file_size,
+                    "format": info.format,
+                    "filename": filename,
+                    "index": index,
+                    "total": total,
+                }),
+            );
+        }
+        Err(e) => {
+            send_to_js(
+                webview,
+                "error",
+                &serde_json::json!({
+                    "message": e
+                }),
+            );
+        }
     }
 }
 
@@ -198,6 +244,10 @@ fn paste_image_from_clipboard() -> Result<(String, u32, u32, u64), String> {
     let data_uri = format!("data:image/png;base64,{}", b64);
 
     Ok((data_uri, w, h, size))
+}
+
+fn send_loading_done(webview: &WebView) {
+    send_to_js(webview, "loading_done", &serde_json::json!({}));
 }
 
 fn send_to_js(webview: &WebView, event: &str, data: &serde_json::Value) {

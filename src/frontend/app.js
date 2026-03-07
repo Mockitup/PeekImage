@@ -25,7 +25,16 @@ window.__fromRust = function(event, data) {
         setTitle(data.filename);
         sendToRust('set_title', { title: 'PeekImage - ' + data.filename });
       };
+      imgEl.onerror = function() {
+        loading = false;
+        document.getElementById('loading-spinner').classList.remove('visible');
+        showError('Failed to display image');
+      };
       imgEl.src = data.data_uri;
+      break;
+    case 'loading_done':
+      loading = false;
+      document.getElementById('loading-spinner').classList.remove('visible');
       break;
     case 'copied':
       showStatus('Copied to clipboard');
@@ -50,8 +59,8 @@ function updateStatusBar(data) {
     (w && h) ? w + ' \u00d7 ' + h : '';
   document.getElementById('status-filesize').textContent = formatFileSize(data.file_size);
   document.getElementById('status-format').textContent = data.format;
-  document.getElementById('status-nav').textContent =
-    data.total > 1 ? data.index + ' / ' + data.total : '';
+  lastNavText = data.total > 1 ? data.index + ' / ' + data.total : '';
+  document.getElementById('status-nav').textContent = lastNavText;
 }
 
 function formatFileSize(bytes) {
@@ -77,13 +86,13 @@ function clearError() {
 }
 
 var statusTimer = null;
+var lastNavText = '';
 function showStatus(message) {
   var el = document.getElementById('status-nav');
-  var prev = el.textContent;
   el.textContent = message;
   el.style.color = 'var(--accent)';
   clearTimeout(statusTimer);
-  statusTimer = setTimeout(function() { el.textContent = prev; el.style.color = ''; }, 1500);
+  statusTimer = setTimeout(function() { el.textContent = lastNavText; el.style.color = ''; }, 1500);
 }
 
 function requestImage(command, data) {

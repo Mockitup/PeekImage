@@ -136,14 +136,17 @@ fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, Stri
     let (width, height) = (img.width(), img.height());
 
     let img = if width > MAX_DIMENSION || height > MAX_DIMENSION {
-        img.resize(
+        let resized = img.resize(
             MAX_DIMENSION,
             MAX_DIMENSION,
             image::imageops::FilterType::Lanczos3,
-        )
+        );
+        resized
     } else {
         img
     };
+
+    let (width, height) = (img.width(), img.height());
 
     let mut buf = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut buf);
@@ -159,7 +162,6 @@ fn load_decoded(path: &str, ext: &str, file_size: u64) -> Result<ImageInfo, Stri
         "pnm" | "pbm" | "pgm" | "ppm" | "pam" => "PNM",
         "qoi" => "QOI",
         "hdr" => "HDR",
-        "dds" => "DDS",
         _ => "Image",
     }
     .to_string();

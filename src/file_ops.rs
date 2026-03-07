@@ -12,7 +12,7 @@ pub fn pick_open_image() -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
-pub fn get_image_list(current_path: &str) -> Vec<PathBuf> {
+fn get_image_list(current_path: &str) -> Vec<PathBuf> {
     let path = Path::new(current_path);
     let dir = match path.parent() {
         Some(d) => d,
@@ -49,23 +49,29 @@ pub fn get_image_list(current_path: &str) -> Vec<PathBuf> {
     images
 }
 
-pub fn get_sibling_image(current_path: &str, direction: i32) -> Option<String> {
-    let images = get_image_list(current_path);
+fn find_index(images: &[PathBuf], current_path: &str) -> Option<usize> {
     let current = Path::new(current_path);
+    images.iter().position(|p| p == current)
+}
 
-    let current_idx = images.iter().position(|p| p == current)?;
+pub fn get_sibling_image(current_path: &str, direction: i32) -> Option<(String, usize, usize)> {
+    let images = get_image_list(current_path);
+    let current_idx = find_index(&images, current_path)?;
     let new_idx = if direction > 0 {
         (current_idx + 1) % images.len()
     } else {
         (current_idx + images.len() - 1) % images.len()
     };
 
-    Some(images[new_idx].to_string_lossy().to_string())
+    Some((
+        images[new_idx].to_string_lossy().to_string(),
+        new_idx + 1,
+        images.len(),
+    ))
 }
 
 pub fn get_image_position(current_path: &str) -> (usize, usize) {
     let images = get_image_list(current_path);
-    let current = Path::new(current_path);
-    let idx = images.iter().position(|p| p == current).unwrap_or(0);
+    let idx = find_index(&images, current_path).unwrap_or(0);
     (idx + 1, images.len())
 }
