@@ -98,6 +98,7 @@ var Viewer = (function() {
     state.naturalHeight = naturalHeight;
     img.style.transformOrigin = '0 0';
     img.style.display = '';
+    viewport.classList.add('has-image');
     fitToWindow();
   }
 
@@ -122,7 +123,7 @@ var Viewer = (function() {
     state.dragStartY = e.clientY;
     state.dragPanStartX = state.panX;
     state.dragPanStartY = state.panY;
-    viewport.style.cursor = 'grabbing';
+    viewport.classList.add('dragging');
     e.preventDefault();
   });
 
@@ -138,7 +139,7 @@ var Viewer = (function() {
   document.addEventListener('mouseup', function() {
     if (!state.dragging) return;
     state.dragging = false;
-    viewport.style.cursor = '';
+    viewport.classList.remove('dragging');
   });
 
   // Double-click toggle fit/actual

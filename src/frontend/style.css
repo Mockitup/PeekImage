@@ -197,6 +197,14 @@ html, body {
   cursor: default;
 }
 
+#viewport.has-image {
+  cursor: grab;
+}
+
+#viewport.dragging {
+  cursor: grabbing;
+}
+
 #viewport.bg-black {
   background: #000000;
 }
