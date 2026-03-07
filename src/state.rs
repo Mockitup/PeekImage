@@ -7,6 +7,7 @@ pub struct AppState {
     pub image_height: u32,
     pub image_is_hdr: bool,
     pub html: String,
+    pub pending_file: Option<String>,
 }
 
 impl AppState {
@@ -20,6 +21,7 @@ impl AppState {
             image_height: 0,
             image_is_hdr: false,
             html: String::new(),
+            pending_file: None,
         }
     }
 }

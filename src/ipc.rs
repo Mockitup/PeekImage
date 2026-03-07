@@ -132,7 +132,12 @@ pub fn handle_ipc_message(
                 ),
             }
         }
-        "ready" => {}
+        "ready" => {
+            let pending = state.lock().unwrap().pending_file.take();
+            if let Some(p) = pending {
+                load_and_send_image(webview, &p, state);
+            }
+        }
         _ => eprintln!("Unknown IPC command: {}", parsed.command),
     }
 }
