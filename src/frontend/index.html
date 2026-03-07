@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>/* __CSS__ */</style>
+</head>
+<body>
+  <div id="titlebar">
+    <div class="titlebar-actions">
+      <button id="btn-open" title="Open (Ctrl+O)">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M2 13V4.5a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button id="btn-prev" title="Previous (Left Arrow)">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="btn-next" title="Next (Right Arrow)">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="titlebar-sep"></div>
+      <button id="btn-fit" title="Fit to Window (F)" class="active">
+        <svg viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 3.5L6.5 6.5M12.5 3.5L9.5 6.5M3.5 12.5L6.5 9.5M12.5 12.5L9.5 9.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btn-actual" title="Actual Size (Ctrl+1)">
+        <svg viewBox="0 0 16 16" fill="none"><text x="3" y="12" font-size="10.5" font-weight="700" font-family="system-ui,sans-serif" fill="currentColor">1:1</text></svg>
+      </button>
+    </div>
+    <span id="titlebar-title">PeekImage</span>
+    <div id="window-controls">
+      <button id="btn-theme" title="Toggle Theme">
+        <svg id="icon-sun" viewBox="0 0 16 16" fill="none" style="display:none"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 2v1.5M8 12.5V14M2 8h1.5M12.5 8H14M3.75 3.75l1.06 1.06M11.19 11.19l1.06 1.06M3.75 12.25l1.06-1.06M11.19 4.81l1.06-1.06" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        <svg id="icon-moon" viewBox="0 0 16 16" fill="none"><path d="M13.5 8.5a5.5 5.5 0 0 1-6-6 5.5 5.5 0 1 0 6 6z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="window-controls-sep"></div>
+      <button id="btn-minimize" title="Minimize">
+        <svg viewBox="0 0 10 10"><line x1="2" y1="5" x2="8" y2="5"/></svg>
+      </button>
+      <button id="btn-maximize" title="Maximize">
+        <svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="1"/></svg>
+      </button>
+      <button id="btn-close" title="Close">
+        <svg viewBox="0 0 10 10"><line x1="2" y1="2" x2="8" y2="8"/><line x1="8" y1="2" x2="2" y2="8"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="viewport">
+    <div id="welcome-panel">
+      <div class="welcome-icon">
+        <svg viewBox="0 0 48 48" fill="none">
+          <rect x="4" y="8" width="40" height="32" rx="3" stroke="currentColor" stroke-width="2"/>
+          <circle cx="16" cy="20" r="4" stroke="currentColor" stroke-width="2"/>
+          <path d="M4 32l10-8 6 5 12-10 12 10v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div class="welcome-text">Drop an image or press Ctrl+O</div>
+      <div class="welcome-formats">PNG, JPEG, GIF, WebP, SVG, BMP, ICO, TIFF, TGA, PNM, QOI, HDR</div>
+    </div>
+    <img id="image" style="display:none" draggable="false">
+    <div id="loading-spinner"></div>
+  </div>
+
+  <div id="zoom-toast"></div>
+
+  <div id="drop-overlay">
+    <div class="drop-message">Drop to open</div>
+  </div>
+
+  <div id="statusbar">
+    <span id="status-filename"></span>
+    <span id="status-dimensions"></span>
+    <span id="status-filesize"></span>
+    <span id="status-format"></span>
+    <span id="status-zoom">100%</span>
+    <span id="status-nav"></span>
+  </div>
+
+  <!-- __SCRIPTS__ -->
+</body>
+</html>
