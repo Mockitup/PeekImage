@@ -27,7 +27,7 @@
       <div class="titlebar-sep" id="hdr-sep" style="display:none"></div>
       <div id="hdr-controls" style="display:none">
         <span id="exposure-label">EV</span>
-        <input type="range" id="exposure-slider" min="-5" max="5" step="0.1" value="0" tabindex="-1">
+        <input type="range" id="exposure-slider" min="-10" max="10" step="0.1" value="0" tabindex="-1">
         <span id="exposure-value">0.0</span>
       </div>
     </div>
@@ -62,7 +62,7 @@
       <div class="welcome-text">Drop an image or press Ctrl+O</div>
       <div class="welcome-formats">PNG, JPEG, GIF, WebP, SVG, BMP, ICO, TIFF, TGA, PNM, QOI, HDR, EXR</div>
     </div>
-    <img id="image" style="display:none" draggable="false">
+    <canvas id="canvas" style="display:none"></canvas>
     <div id="loading-spinner"></div>
   </div>
 

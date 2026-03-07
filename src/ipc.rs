@@ -1,4 +1,3 @@
-use base64::Engine;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use tao::window::Window;
@@ -64,33 +63,6 @@ pub fn handle_ipc_message(
                 send_loading_done(webview);
             }
         }
-        "set_exposure" => {
-            let ev = parsed.exposure.unwrap_or(0.0);
-            let st = state.lock().unwrap();
-            if let Some(ref img) = st.hdr_image {
-                match image_decode::apply_exposure(img, ev, 8192) {
-                    Ok((data_uri, w, h)) => {
-                        send_to_js(
-                            webview,
-                            "exposure_updated",
-                            &serde_json::json!({
-                                "data_uri": data_uri,
-                                "width": w,
-                                "height": h,
-                            }),
-                        );
-                    }
-                    Err(e) => {
-                        send_to_js(
-                            webview,
-                            "error",
-                            &serde_json::json!({"message": e}),
-                        );
-                    }
-                }
-            }
-            drop(st);
-        }
         "set_title" => {
             if let Some(title) = parsed.title {
                 window.set_title(&title);
@@ -119,7 +91,8 @@ pub fn handle_ipc_message(
         }
         "copy_image" => {
             if let Some(ref path) = parsed.path {
-                match copy_image_to_clipboard(path) {
+                let ev = parsed.exposure.unwrap_or(0.0);
+                match copy_image_to_clipboard(path, ev, state) {
                     Ok(_) => send_to_js(
                         webview,
                         "copied",
@@ -134,22 +107,15 @@ pub fn handle_ipc_message(
             }
         }
         "paste_image" => {
-            // Clear HDR cache on paste
-            {
-                let mut st = state.lock().unwrap();
-                st.hdr_image = None;
-                st.hdr_path = None;
-            }
-            match paste_image_from_clipboard() {
-                Ok((data_uri, width, height, size)) => {
+            match paste_image_from_clipboard(state) {
+                Ok((w, h, size)) => {
                     send_to_js(
                         webview,
-                        "image_loaded",
+                        "image_ready",
                         &serde_json::json!({
                             "path": "",
-                            "data_uri": data_uri,
-                            "width": width,
-                            "height": height,
+                            "width": w,
+                            "height": h,
                             "file_size": size,
                             "format": "Clipboard",
                             "filename": "Clipboard",
@@ -179,15 +145,20 @@ fn load_and_send_image_with_pos(
     state: &Arc<Mutex<AppState>>,
 ) {
     match image_decode::load_image(path) {
-        Ok((info, hdr_cache)) => {
+        Ok((data, hdr_cache)) => {
             {
                 let mut st = state.lock().unwrap();
                 st.hdr_image = hdr_cache;
-                st.hdr_path = if info.is_hdr {
+                st.hdr_path = if data.is_hdr {
                     Some(path.to_string())
                 } else {
                     None
                 };
+                st.image_width = data.width;
+                st.image_height = data.height;
+                st.image_is_hdr = data.is_hdr;
+                st.image_content_type = data.content_type;
+                st.image_bytes = Some(data.raw_bytes);
             }
 
             let filename = std::path::Path::new(path)
@@ -197,18 +168,17 @@ fn load_and_send_image_with_pos(
 
             send_to_js(
                 webview,
-                "image_loaded",
+                "image_ready",
                 &serde_json::json!({
                     "path": path,
-                    "data_uri": info.data_uri,
-                    "width": info.width,
-                    "height": info.height,
-                    "file_size": info.file_size,
-                    "format": info.format,
+                    "width": data.width,
+                    "height": data.height,
+                    "file_size": data.file_size,
+                    "format": data.format,
                     "filename": filename,
                     "index": index,
                     "total": total,
-                    "is_hdr": info.is_hdr,
+                    "is_hdr": data.is_hdr,
                 }),
             );
         }
@@ -226,15 +196,25 @@ fn load_and_send_image_with_pos(
 
 fn load_and_send_image(webview: &WebView, path: &str, state: &Arc<Mutex<AppState>>) {
     match image_decode::load_image(path) {
-        Ok((info, hdr_cache)) => {
+        Ok((data, hdr_cache)) => {
+            let width = data.width;
+            let height = data.height;
+            let file_size = data.file_size;
+            let format = data.format.clone();
+            let is_hdr = data.is_hdr;
             {
                 let mut st = state.lock().unwrap();
                 st.hdr_image = hdr_cache;
-                st.hdr_path = if info.is_hdr {
+                st.hdr_path = if is_hdr {
                     Some(path.to_string())
                 } else {
                     None
                 };
+                st.image_width = width;
+                st.image_height = height;
+                st.image_is_hdr = is_hdr;
+                st.image_content_type = data.content_type;
+                st.image_bytes = Some(data.raw_bytes);
             }
 
             let (index, total) = file_ops::get_image_position(path);
@@ -245,18 +225,17 @@ fn load_and_send_image(webview: &WebView, path: &str, state: &Arc<Mutex<AppState
 
             send_to_js(
                 webview,
-                "image_loaded",
+                "image_ready",
                 &serde_json::json!({
                     "path": path,
-                    "data_uri": info.data_uri,
-                    "width": info.width,
-                    "height": info.height,
-                    "file_size": info.file_size,
-                    "format": info.format,
+                    "width": width,
+                    "height": height,
+                    "file_size": file_size,
+                    "format": format,
                     "filename": filename,
                     "index": index,
                     "total": total,
-                    "is_hdr": info.is_hdr,
+                    "is_hdr": is_hdr,
                 }),
             );
         }
@@ -272,7 +251,7 @@ fn load_and_send_image(webview: &WebView, path: &str, state: &Arc<Mutex<AppState
     }
 }
 
-fn copy_image_to_clipboard(path: &str) -> Result<(), String> {
+fn copy_image_to_clipboard(path: &str, exposure: f32, state: &Arc<Mutex<AppState>>) -> Result<(), String> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -281,6 +260,26 @@ fn copy_image_to_clipboard(path: &str) -> Result<(), String> {
     if ext == "svg" {
         return Err("Cannot copy SVG to clipboard as image".to_string());
     }
+
+    let is_hdr = image_decode::is_hdr_format(&ext);
+    if is_hdr && exposure != 0.0 {
+        let st = state.lock().unwrap();
+        if let Some(ref img) = st.hdr_image {
+            let rgba = image_decode::apply_exposure(img, exposure)?;
+            let (w, h) = (rgba.width(), rgba.height());
+            let mut clipboard =
+                arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {}", e))?;
+            clipboard
+                .set_image(arboard::ImageData {
+                    width: w as usize,
+                    height: h as usize,
+                    bytes: rgba.into_raw().into(),
+                })
+                .map_err(|e| format!("Clipboard error: {}", e))?;
+            return Ok(());
+        }
+    }
+
     let img = image::open(path).map_err(|e| format!("Cannot open image: {}", e))?;
     let rgba = img.to_rgba8();
     let (w, h) = rgba.dimensions();
@@ -295,7 +294,7 @@ fn copy_image_to_clipboard(path: &str) -> Result<(), String> {
         .map_err(|e| format!("Clipboard error: {}", e))
 }
 
-fn paste_image_from_clipboard() -> Result<(String, u32, u32, u64), String> {
+fn paste_image_from_clipboard(state: &Arc<Mutex<AppState>>) -> Result<(u32, u32, u64), String> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {}", e))?;
     let img_data = clipboard
@@ -314,10 +313,19 @@ fn paste_image_from_clipboard() -> Result<(String, u32, u32, u64), String> {
         .map_err(|e| format!("Cannot encode image: {}", e))?;
 
     let size = buf.len() as u64;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
-    let data_uri = format!("data:image/png;base64,{}", b64);
 
-    Ok((data_uri, w, h, size))
+    {
+        let mut st = state.lock().unwrap();
+        st.hdr_image = None;
+        st.hdr_path = None;
+        st.image_width = w;
+        st.image_height = h;
+        st.image_is_hdr = false;
+        st.image_content_type = "image/png".to_string();
+        st.image_bytes = Some(buf);
+    }
+
+    Ok((w, h, size))
 }
 
 fn send_loading_done(webview: &WebView) {

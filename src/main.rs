@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 use tao::{
     dpi::{LogicalPosition, LogicalSize},
@@ -17,6 +18,7 @@ mod window_state;
 
 const INDEX_HTML: &str = include_str!("frontend/index.html");
 const STYLE_CSS: &str = include_str!("frontend/style.css");
+const RENDERER_JS: &str = include_str!("frontend/renderer.js");
 const VIEWER_JS: &str = include_str!("frontend/viewer.js");
 const APP_JS: &str = include_str!("frontend/app.js");
 
@@ -44,12 +46,44 @@ fn main() {
         .unwrap();
 
     let full_html = build_html();
+    {
+        let mut st = app_state.lock().unwrap();
+        st.html = full_html;
+    }
 
     let proxy_ipc = proxy.clone();
     let proxy_drop = proxy.clone();
 
+    let state_proto = Arc::clone(&app_state);
     let _webview = WebViewBuilder::new()
-        .with_html(&full_html)
+        .with_custom_protocol("peekimage".to_string(), move |_id, request| {
+            let uri = request.uri().path();
+            if uri == "/" || uri == "/index.html" {
+                let st = state_proto.lock().unwrap();
+                wry::http::Response::builder()
+                    .header("Content-Type", "text/html")
+                    .body(Cow::Owned(st.html.as_bytes().to_vec()))
+                    .unwrap()
+            } else if uri == "/image" {
+                let st = state_proto.lock().unwrap();
+                match &st.image_bytes {
+                    Some(bytes) => wry::http::Response::builder()
+                        .header("Content-Type", &st.image_content_type)
+                        .body(Cow::Owned(bytes.clone()))
+                        .unwrap(),
+                    None => wry::http::Response::builder()
+                        .status(404)
+                        .body(Cow::Borrowed(b"No image" as &[u8]))
+                        .unwrap(),
+                }
+            } else {
+                wry::http::Response::builder()
+                    .status(404)
+                    .body(Cow::Borrowed(b"Not found" as &[u8]))
+                    .unwrap()
+            }
+        })
+        .with_url("http://peekimage.localhost/")
         .with_ipc_handler(move |request| {
             let body = request.body().to_string();
             let _ = proxy_ipc.send_event(UserEvent::IpcMessage(body));
@@ -125,7 +159,8 @@ fn escape_for_script_tag(js: &str) -> String {
 
 fn build_html() -> String {
     let scripts = format!(
-        "<script>{}</script>\n<script>{}</script>",
+        "<script>{}</script>\n<script>{}</script>\n<script>{}</script>",
+        escape_for_script_tag(RENDERER_JS),
         escape_for_script_tag(VIEWER_JS),
         escape_for_script_tag(APP_JS),
     );

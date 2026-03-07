@@ -10,38 +10,22 @@ var loading = false;
 var bgModes = ['checker', 'black', 'white'];
 var bgModeIndex = 0;
 var isHdr = false;
-var exposureTimer = null;
-var exposureUpdate = false;
+var currentExposure = 0;
 
 // Rust -> JS
 window.__fromRust = function(event, data) {
   switch (event) {
-    case 'image_loaded':
+    case 'image_ready':
       currentPath = data.path;
       isHdr = !!data.is_hdr;
       document.getElementById('hdr-sep').style.display = isHdr ? '' : 'none';
       document.getElementById('hdr-controls').style.display = isHdr ? '' : 'none';
       if (isHdr) {
+        currentExposure = 0;
         document.getElementById('exposure-slider').value = 0;
         document.getElementById('exposure-value').textContent = '0.0';
       }
-      var imgEl = document.getElementById('image');
-      imgEl.onload = function() {
-        if (exposureUpdate) { exposureUpdate = false; return; }
-        loading = false;
-        document.getElementById('loading-spinner').classList.remove('visible');
-        document.getElementById('welcome-panel').style.display = 'none';
-        Viewer.setImage(data.width || imgEl.naturalWidth, data.height || imgEl.naturalHeight);
-        updateStatusBar(data);
-        setTitle(data.filename);
-        sendToRust('set_title', { title: 'PeekImage - ' + data.filename });
-      };
-      imgEl.onerror = function() {
-        loading = false;
-        document.getElementById('loading-spinner').classList.remove('visible');
-        showError('Failed to display image');
-      };
-      imgEl.src = data.data_uri;
+      fetchAndDisplay(data);
       break;
     case 'loading_done':
       loading = false;
@@ -50,10 +34,6 @@ window.__fromRust = function(event, data) {
     case 'copied':
       showStatus('Copied to clipboard');
       break;
-    case 'exposure_updated':
-      exposureUpdate = true;
-      document.getElementById('image').src = data.data_uri;
-      break;
     case 'error':
       loading = false;
       document.getElementById('loading-spinner').classList.remove('visible');
@@ -61,6 +41,53 @@ window.__fromRust = function(event, data) {
       break;
   }
 };
+
+function fetchAndDisplay(data) {
+  loading = true;
+  document.getElementById('loading-spinner').classList.add('visible');
+  var url = 'http://peekimage.localhost/image?t=' + Date.now();
+  if (data.is_hdr) {
+    fetch(url).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
+      Renderer.uploadHDR(buf, data.width, data.height);
+      finishDisplay(data);
+    }).catch(function(e) {
+      loading = false;
+      document.getElementById('loading-spinner').classList.remove('visible');
+      showError('Failed to fetch image: ' + e.message);
+    });
+  } else {
+    fetch(url).then(function(r) { return r.blob(); }).then(function(blob) {
+      var objUrl = URL.createObjectURL(blob);
+      var img = new Image();
+      img.onload = function() {
+        Renderer.uploadLDR(img);
+        URL.revokeObjectURL(objUrl);
+        finishDisplay(data);
+      };
+      img.onerror = function() {
+        URL.revokeObjectURL(objUrl);
+        loading = false;
+        document.getElementById('loading-spinner').classList.remove('visible');
+        showError('Failed to display image');
+      };
+      img.src = objUrl;
+    }).catch(function(e) {
+      loading = false;
+      document.getElementById('loading-spinner').classList.remove('visible');
+      showError('Failed to fetch image: ' + e.message);
+    });
+  }
+}
+
+function finishDisplay(data) {
+  loading = false;
+  document.getElementById('loading-spinner').classList.remove('visible');
+  document.getElementById('welcome-panel').style.display = 'none';
+  Viewer.setImage(data.width, data.height);
+  updateStatusBar(data);
+  setTitle(data.filename);
+  sendToRust('set_title', { title: 'PeekImage - ' + data.filename });
+}
 
 function setTitle(title) {
   document.getElementById('titlebar-title').textContent = title;
@@ -119,10 +146,10 @@ function requestImage(command, data) {
 
 function cycleBgMode() {
   bgModeIndex = (bgModeIndex + 1) % bgModes.length;
-  var viewport = document.getElementById('viewport');
-  viewport.classList.remove('bg-black', 'bg-white');
-  if (bgModes[bgModeIndex] === 'black') viewport.classList.add('bg-black');
-  else if (bgModes[bgModeIndex] === 'white') viewport.classList.add('bg-white');
+  if (Renderer) {
+    Renderer.setBgMode(bgModeIndex);
+    Renderer.render();
+  }
 }
 
 // Theme
@@ -130,6 +157,10 @@ function setTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   document.getElementById('icon-sun').style.display = theme === 'light' ? '' : 'none';
   document.getElementById('icon-moon').style.display = theme === 'light' ? 'none' : '';
+  if (Renderer) {
+    Renderer.updateThemeColors();
+    Renderer.render();
+  }
   try { localStorage.setItem('peekimage-theme', theme); } catch(e) {}
 }
 
@@ -154,21 +185,32 @@ document.getElementById('btn-next').addEventListener('click', function() {
 document.getElementById('btn-fit').addEventListener('click', function() { Viewer.fitToWindow(); });
 document.getElementById('btn-actual').addEventListener('click', function() { Viewer.actualSize(); });
 
-// Exposure Slider
+// Exposure Slider - instant, no IPC
+document.getElementById('exposure-slider').addEventListener('dblclick', function() {
+  this.value = 0;
+  currentExposure = 0;
+  document.getElementById('exposure-value').textContent = '0.0';
+  if (Renderer) { Renderer.setExposure(0); Renderer.render(); }
+});
 document.getElementById('exposure-slider').addEventListener('input', function() {
   var val = parseFloat(this.value);
+  currentExposure = val;
   document.getElementById('exposure-value').textContent = val.toFixed(1);
-  clearTimeout(exposureTimer);
-  exposureTimer = setTimeout(function() {
-    sendToRust('set_exposure', { exposure: val });
-  }, 120);
+  if (Renderer) {
+    Renderer.setExposure(val);
+    Renderer.render();
+  }
 });
 
 // Keyboard Shortcuts
 document.addEventListener('keydown', function(e) {
   if (e.ctrlKey && e.key === 'c') {
     e.preventDefault();
-    if (currentPath) sendToRust('copy_image', { path: currentPath });
+    if (currentPath) {
+      var copyData = { path: currentPath };
+      if (isHdr) copyData.exposure = currentExposure;
+      sendToRust('copy_image', copyData);
+    }
   } else if (e.ctrlKey && e.key === 'v') {
     e.preventDefault();
     requestImage('paste_image');
@@ -202,9 +244,13 @@ document.addEventListener('keydown', function(e) {
     if (e.ctrlKey) return;
     e.preventDefault();
     if (isHdr) {
+      currentExposure = 0;
       document.getElementById('exposure-slider').value = 0;
       document.getElementById('exposure-value').textContent = '0.0';
-      sendToRust('set_exposure', { exposure: 0 });
+      if (Renderer) {
+        Renderer.setExposure(0);
+        Renderer.render();
+      }
     }
   }
 });

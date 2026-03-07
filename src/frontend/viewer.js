@@ -1,5 +1,5 @@
 var Viewer = (function() {
-  var img = document.getElementById('image');
+  var canvas = document.getElementById('canvas');
   var viewport = document.getElementById('viewport');
 
   var state = {
@@ -21,7 +21,10 @@ var Viewer = (function() {
   var MAX_SCALE = 32;
 
   function updateTransform() {
-    img.style.transform = 'translate(' + state.panX + 'px, ' + state.panY + 'px) scale(' + state.scale + ')';
+    if (Renderer) {
+      Renderer.setTransform(state.panX, state.panY, state.scale);
+      Renderer.render();
+    }
     document.getElementById('status-zoom').textContent = Math.round(state.scale * 100) + '%';
   }
 
@@ -56,11 +59,9 @@ var Viewer = (function() {
   }
 
   function snapScale(oldScale, newScale) {
-    // Snap to 100% when zooming across it
     if ((oldScale < 1 && newScale > 1) || (oldScale > 1 && newScale < 1)) {
       return 1;
     }
-    // Snap to 100% when very close
     if (Math.abs(newScale - 1) < 0.03) {
       return 1;
     }
@@ -96,8 +97,7 @@ var Viewer = (function() {
   function setImage(naturalWidth, naturalHeight) {
     state.naturalWidth = naturalWidth;
     state.naturalHeight = naturalHeight;
-    img.style.transformOrigin = '0 0';
-    img.style.display = '';
+    canvas.style.display = '';
     viewport.classList.add('has-image');
     fitToWindow();
   }
@@ -107,7 +107,7 @@ var Viewer = (function() {
     document.getElementById('btn-actual').classList.toggle('active', state.scale === 1 && state.mode !== 'fit');
   }
 
-  // Mouse wheel zoom (no Ctrl needed)
+  // Mouse wheel zoom
   viewport.addEventListener('wheel', function(e) {
     if (!state.naturalWidth) return;
     e.preventDefault();
@@ -166,6 +166,7 @@ var Viewer = (function() {
 
   // Recenter on resize
   window.addEventListener('resize', function() {
+    if (Renderer) Renderer.resize();
     if (state.mode === 'fit') {
       fitToWindow();
     } else {
