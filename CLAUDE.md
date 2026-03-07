@@ -42,7 +42,7 @@ src/
 cargo build --release
 ```
 
-Binary lands at `target/release/peekimage.exe`. Optimized for size (~2 MB) via LTO, panic=abort, strip symbols.
+Binary lands at `target/release/peekimage.exe`. Optimized for size (~2 MB) via LTO, panic=abort. Symbols are NOT stripped (`strip = "none"`) — needed for crash diagnostics.
 
 ## Image Pipeline
 
