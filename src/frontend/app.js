@@ -27,6 +27,9 @@ window.__fromRust = function(event, data) {
       };
       imgEl.src = data.data_uri;
       break;
+    case 'copied':
+      showStatus('Copied to clipboard');
+      break;
     case 'error':
       loading = false;
       document.getElementById('loading-spinner').classList.remove('visible');
@@ -71,6 +74,16 @@ function clearError() {
   var el = document.getElementById('status-filename');
   el.style.color = '';
   clearTimeout(errorTimer);
+}
+
+var statusTimer = null;
+function showStatus(message) {
+  var el = document.getElementById('status-nav');
+  var prev = el.textContent;
+  el.textContent = message;
+  el.style.color = 'var(--accent)';
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(function() { el.textContent = prev; el.style.color = ''; }, 1500);
 }
 
 function requestImage(command, data) {
@@ -119,7 +132,13 @@ document.getElementById('btn-actual').addEventListener('click', function() { Vie
 
 // Keyboard Shortcuts
 document.addEventListener('keydown', function(e) {
-  if (e.ctrlKey && e.key === 'o') {
+  if (e.ctrlKey && e.key === 'c') {
+    e.preventDefault();
+    if (currentPath) sendToRust('copy_image', { path: currentPath });
+  } else if (e.ctrlKey && e.key === 'v') {
+    e.preventDefault();
+    requestImage('paste_image');
+  } else if (e.ctrlKey && e.key === 'o') {
     e.preventDefault();
     requestImage('open_image');
   } else if (e.key === 'ArrowLeft') {

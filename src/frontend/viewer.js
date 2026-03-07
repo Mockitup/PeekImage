@@ -151,10 +151,23 @@ var Viewer = (function() {
     }
   });
 
-  // Re-fit on resize
+  function centerAtCurrentScale() {
+    if (!state.naturalWidth || !state.naturalHeight) return;
+    var vw = viewport.clientWidth;
+    var vh = viewport.clientHeight;
+    var displayW = state.naturalWidth * state.scale;
+    var displayH = state.naturalHeight * state.scale;
+    state.panX = (vw - displayW) / 2;
+    state.panY = (vh - displayH) / 2;
+    updateTransform();
+  }
+
+  // Recenter on resize
   window.addEventListener('resize', function() {
     if (state.mode === 'fit') {
       fitToWindow();
+    } else {
+      centerAtCurrentScale();
     }
   });
 

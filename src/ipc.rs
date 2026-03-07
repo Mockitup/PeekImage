@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use tao::window::Window;
@@ -77,6 +78,46 @@ pub fn handle_ipc_message(
                 "document.getElementById('drop-overlay').classList.remove('visible')",
             );
         }
+        "copy_image" => {
+            if let Some(ref path) = parsed.path {
+                match copy_image_to_clipboard(path) {
+                    Ok(_) => send_to_js(
+                        webview,
+                        "copied",
+                        &serde_json::json!({}),
+                    ),
+                    Err(e) => send_to_js(
+                        webview,
+                        "error",
+                        &serde_json::json!({"message": e}),
+                    ),
+                }
+            }
+        }
+        "paste_image" => match paste_image_from_clipboard() {
+            Ok((data_uri, width, height, size)) => {
+                send_to_js(
+                    webview,
+                    "image_loaded",
+                    &serde_json::json!({
+                        "path": "",
+                        "data_uri": data_uri,
+                        "width": width,
+                        "height": height,
+                        "file_size": size,
+                        "format": "Clipboard",
+                        "filename": "Clipboard",
+                        "index": 0,
+                        "total": 0,
+                    }),
+                );
+            }
+            Err(e) => send_to_js(
+                webview,
+                "error",
+                &serde_json::json!({"message": e}),
+            ),
+        },
         "ready" => {}
         _ => eprintln!("Unknown IPC command: {}", parsed.command),
     }
@@ -117,6 +158,46 @@ fn load_and_send_image(webview: &WebView, path: &str) {
             );
         }
     }
+}
+
+fn copy_image_to_clipboard(path: &str) -> Result<(), String> {
+    let img = image::open(path).map_err(|e| format!("Cannot open image: {}", e))?;
+    let rgba = img.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {}", e))?;
+    clipboard
+        .set_image(arboard::ImageData {
+            width: w as usize,
+            height: h as usize,
+            bytes: rgba.into_raw().into(),
+        })
+        .map_err(|e| format!("Clipboard error: {}", e))
+}
+
+fn paste_image_from_clipboard() -> Result<(String, u32, u32, u64), String> {
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| format!("Clipboard error: {}", e))?;
+    let img_data = clipboard
+        .get_image()
+        .map_err(|_| "No image on clipboard".to_string())?;
+    let w = img_data.width as u32;
+    let h = img_data.height as u32;
+
+    let img_buf: image::RgbaImage = image::RgbaImage::from_raw(w, h, img_data.bytes.into_owned())
+        .ok_or("Invalid clipboard image data".to_string())?;
+
+    let mut buf = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut buf);
+    image::DynamicImage::ImageRgba8(img_buf)
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|e| format!("Cannot encode image: {}", e))?;
+
+    let size = buf.len() as u64;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    let data_uri = format!("data:image/png;base64,{}", b64);
+
+    Ok((data_uri, w, h, size))
 }
 
 fn send_to_js(webview: &WebView, event: &str, data: &serde_json::Value) {
