@@ -67,10 +67,13 @@ fn main() {
             } else if uri == "/image" {
                 let st = state_proto.lock().unwrap();
                 match &st.image_bytes {
-                    Some(bytes) => wry::http::Response::builder()
-                        .header("Content-Type", &st.image_content_type)
-                        .body(Cow::Owned(bytes.clone()))
-                        .unwrap(),
+                    Some(bytes) => {
+                        let bytes = Arc::clone(bytes);
+                        wry::http::Response::builder()
+                            .header("Content-Type", &st.image_content_type)
+                            .body(Cow::Owned(bytes.to_vec()))
+                            .unwrap()
+                    }
                     None => wry::http::Response::builder()
                         .status(404)
                         .body(Cow::Borrowed(b"No image" as &[u8]))

@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tao::window::Window;
 use wry::WebView;
@@ -36,15 +37,21 @@ pub fn handle_ipc_message(
         "open_image" => {
             let path = parsed.path.or_else(file_ops::pick_open_image);
             if let Some(p) = path {
-                load_and_send_image(webview, &p, state);
+                load_and_send_image(webview, &p, None, state);
             } else {
                 send_loading_done(webview);
             }
         }
         "next_image" => {
             if let Some(ref current) = parsed.path {
-                if let Some((next, idx, total)) = file_ops::get_sibling_image(current, 1) {
-                    load_and_send_image_with_pos(webview, &next, idx, total, state);
+                let cache = state.lock().unwrap().cached_dir.clone();
+                if let Some((next, idx, total, dir, list)) =
+                    file_ops::get_sibling_image_cached(current, 1, cache.as_ref())
+                {
+                    {
+                        state.lock().unwrap().cached_dir = Some((dir, list));
+                    }
+                    load_and_send_image(webview, &next, Some((idx, total)), state);
                 } else {
                     send_loading_done(webview);
                 }
@@ -54,8 +61,14 @@ pub fn handle_ipc_message(
         }
         "prev_image" => {
             if let Some(ref current) = parsed.path {
-                if let Some((prev, idx, total)) = file_ops::get_sibling_image(current, -1) {
-                    load_and_send_image_with_pos(webview, &prev, idx, total, state);
+                let cache = state.lock().unwrap().cached_dir.clone();
+                if let Some((prev, idx, total, dir, list)) =
+                    file_ops::get_sibling_image_cached(current, -1, cache.as_ref())
+                {
+                    {
+                        state.lock().unwrap().cached_dir = Some((dir, list));
+                    }
+                    load_and_send_image(webview, &prev, Some((idx, total)), state);
                 } else {
                     send_loading_done(webview);
                 }
@@ -135,22 +148,32 @@ pub fn handle_ipc_message(
         "ready" => {
             let pending = state.lock().unwrap().pending_file.take();
             if let Some(p) = pending {
-                load_and_send_image(webview, &p, state);
+                load_and_send_image(webview, &p, None, state);
             }
         }
         _ => eprintln!("Unknown IPC command: {}", parsed.command),
     }
 }
 
-fn load_and_send_image_with_pos(
+fn load_and_send_image(
     webview: &WebView,
     path: &str,
-    index: usize,
-    total: usize,
+    position: Option<(usize, usize)>,
     state: &Arc<Mutex<AppState>>,
 ) {
     match image_decode::load_image(path) {
         Ok((data, hdr_cache)) => {
+            let (index, total) = match position {
+                Some(pos) => pos,
+                None => {
+                    let cache = state.lock().unwrap().cached_dir.clone();
+                    let (idx, tot, dir, list) =
+                        file_ops::get_image_position_cached(path, cache.as_ref());
+                    state.lock().unwrap().cached_dir = Some((dir, list));
+                    (idx, tot)
+                }
+            };
+
             {
                 let mut st = state.lock().unwrap();
                 st.hdr_image = hdr_cache;
@@ -163,10 +186,10 @@ fn load_and_send_image_with_pos(
                 st.image_height = data.height;
                 st.image_is_hdr = data.is_hdr;
                 st.image_content_type = data.content_type;
-                st.image_bytes = Some(data.raw_bytes);
+                st.image_bytes = Some(Arc::new(data.raw_bytes));
             }
 
-            let filename = std::path::Path::new(path)
+            let filename = Path::new(path)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown");
@@ -184,63 +207,6 @@ fn load_and_send_image_with_pos(
                     "index": index,
                     "total": total,
                     "is_hdr": data.is_hdr,
-                }),
-            );
-        }
-        Err(e) => {
-            send_to_js(
-                webview,
-                "error",
-                &serde_json::json!({
-                    "message": e
-                }),
-            );
-        }
-    }
-}
-
-fn load_and_send_image(webview: &WebView, path: &str, state: &Arc<Mutex<AppState>>) {
-    match image_decode::load_image(path) {
-        Ok((data, hdr_cache)) => {
-            let width = data.width;
-            let height = data.height;
-            let file_size = data.file_size;
-            let format = data.format.clone();
-            let is_hdr = data.is_hdr;
-            {
-                let mut st = state.lock().unwrap();
-                st.hdr_image = hdr_cache;
-                st.hdr_path = if is_hdr {
-                    Some(path.to_string())
-                } else {
-                    None
-                };
-                st.image_width = width;
-                st.image_height = height;
-                st.image_is_hdr = is_hdr;
-                st.image_content_type = data.content_type;
-                st.image_bytes = Some(data.raw_bytes);
-            }
-
-            let (index, total) = file_ops::get_image_position(path);
-            let filename = std::path::Path::new(path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Unknown");
-
-            send_to_js(
-                webview,
-                "image_ready",
-                &serde_json::json!({
-                    "path": path,
-                    "width": width,
-                    "height": height,
-                    "file_size": file_size,
-                    "format": format,
-                    "filename": filename,
-                    "index": index,
-                    "total": total,
-                    "is_hdr": is_hdr,
                 }),
             );
         }
@@ -327,7 +293,7 @@ fn paste_image_from_clipboard(state: &Arc<Mutex<AppState>>) -> Result<(u32, u32,
         st.image_height = h;
         st.image_is_hdr = false;
         st.image_content_type = "image/png".to_string();
-        st.image_bytes = Some(buf);
+        st.image_bytes = Some(Arc::new(buf));
     }
 
     Ok((w, h, size))
