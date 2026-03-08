@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::exr_decode::ExrMetadata;
+
 pub struct AppState {
     pub hdr_image: Option<image::DynamicImage>,
     pub hdr_path: Option<String>,
@@ -12,6 +14,8 @@ pub struct AppState {
     pub html: String,
     pub pending_file: Option<String>,
     pub cached_dir: Option<(PathBuf, Vec<PathBuf>)>,
+    pub exr_metadata: Option<ExrMetadata>,
+    pub exr_current_layer: String,
 }
 
 impl AppState {
@@ -27,6 +31,8 @@ impl AppState {
             html: String::new(),
             pending_file: None,
             cached_dir: None,
+            exr_metadata: None,
+            exr_current_layer: String::new(),
         }
     }
 }

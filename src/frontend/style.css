@@ -118,6 +118,46 @@ html, body {
   opacity: 0.5;
 }
 
+/* ---- EXR Channel Controls ---- */
+#exr-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+#exr-controls select {
+  background: var(--bg-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: var(--font-body);
+  padding: 2px 4px;
+  height: 22px;
+  cursor: pointer;
+  outline: none;
+  max-width: 140px;
+}
+
+#exr-controls select:hover {
+  border-color: var(--accent);
+}
+
+#exr-controls select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+
+#layer-select {
+  min-width: 60px;
+}
+
+#channel-mode-select {
+  min-width: 48px;
+}
+
 /* ---- HDR Exposure Controls ---- */
 #hdr-controls {
   display: flex;

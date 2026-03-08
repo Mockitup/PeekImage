@@ -11,6 +11,8 @@ var bgModes = ['checker', 'black', 'white'];
 var bgModeIndex = 0;
 var isHdr = false;
 var currentExposure = 0;
+var exrLayers = null;
+var exrCurrentLayer = '';
 
 // Rust -> JS
 window.__fromRust = function(event, data) {
@@ -25,7 +27,42 @@ window.__fromRust = function(event, data) {
         document.getElementById('exposure-slider').value = 0;
         document.getElementById('exposure-value').textContent = '0.0';
       }
+      // EXR channel controls
+      if (data.exr_layers && data.exr_layers.length > 0) {
+        exrLayers = data.exr_layers;
+        exrCurrentLayer = data.exr_current_layer || '';
+        populateLayerSelect(exrLayers, exrCurrentLayer);
+        document.getElementById('exr-sep').style.display = '';
+        document.getElementById('exr-controls').style.display = '';
+        // Reset channel mode
+        document.getElementById('channel-mode-select').value = '0';
+        if (Renderer) Renderer.setChannelMode(0);
+      } else {
+        exrLayers = null;
+        exrCurrentLayer = '';
+        document.getElementById('exr-sep').style.display = 'none';
+        document.getElementById('exr-controls').style.display = 'none';
+      }
       fetchAndDisplay(data);
+      break;
+    case 'layer_switched':
+      exrCurrentLayer = data.layer;
+      loading = true;
+      document.getElementById('loading-spinner').classList.add('visible');
+      var url = 'http://peekimage.localhost/image?t=' + Date.now();
+      fetch(url).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
+        Renderer.uploadHDR(buf, data.width, data.height);
+        loading = false;
+        document.getElementById('loading-spinner').classList.remove('visible');
+        Renderer.render();
+        // Update status with layer name
+        var layerLabel = data.layer || 'RGBA';
+        showStatus('Layer: ' + layerLabel);
+      }).catch(function(e) {
+        loading = false;
+        document.getElementById('loading-spinner').classList.remove('visible');
+        showError('Failed to load layer: ' + e.message);
+      });
       break;
     case 'loading_done':
       loading = false;
@@ -252,8 +289,68 @@ document.addEventListener('keydown', function(e) {
         Renderer.render();
       }
     }
+  } else if (e.key === '[') {
+    e.preventDefault();
+    cycleLayer(-1);
+  } else if (e.key === ']') {
+    e.preventDefault();
+    cycleLayer(1);
+  } else if (e.key === 'r' && !e.ctrlKey) {
+    if (exrLayers) { e.preventDefault(); setChannelMode(1); }
+  } else if (e.key === 'g' && !e.ctrlKey) {
+    if (exrLayers) { e.preventDefault(); setChannelMode(2); }
+  } else if (e.key === 'b' && !e.ctrlKey) {
+    if (exrLayers) { e.preventDefault(); setChannelMode(3); }
+  } else if (e.key === '0' && !e.ctrlKey) {
+    if (exrLayers) { e.preventDefault(); setChannelMode(0); }
   }
 });
+
+// EXR Layer/Channel controls
+function populateLayerSelect(layers, currentLayer) {
+  var sel = document.getElementById('layer-select');
+  sel.innerHTML = '';
+  for (var i = 0; i < layers.length; i++) {
+    var opt = document.createElement('option');
+    opt.value = layers[i].name;
+    opt.textContent = layers[i].display_name;
+    if (layers[i].name === currentLayer) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  // Hide layer dropdown if only 1 layer
+  sel.style.display = layers.length > 1 ? '' : 'none';
+}
+
+document.getElementById('layer-select').addEventListener('change', function() {
+  if (loading) return;
+  sendToRust('select_layer', { layer: this.value });
+});
+
+document.getElementById('channel-mode-select').addEventListener('change', function() {
+  var mode = parseInt(this.value, 10);
+  if (Renderer) {
+    Renderer.setChannelMode(mode);
+    Renderer.render();
+  }
+});
+
+function setChannelMode(mode) {
+  document.getElementById('channel-mode-select').value = String(mode);
+  if (Renderer) {
+    Renderer.setChannelMode(mode);
+    Renderer.render();
+  }
+}
+
+function cycleLayer(direction) {
+  if (!exrLayers || exrLayers.length <= 1 || loading) return;
+  var sel = document.getElementById('layer-select');
+  var idx = sel.selectedIndex + direction;
+  if (idx < 0) idx = exrLayers.length - 1;
+  if (idx >= exrLayers.length) idx = 0;
+  sel.selectedIndex = idx;
+  sendToRust('select_layer', { layer: exrLayers[idx].name });
+}
 
 // Pixel inspection
 (function() {

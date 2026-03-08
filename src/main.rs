@@ -10,6 +10,7 @@ use tao::{
 };
 use wry::{WebViewBuilder, WebViewBuilderExtWindows};
 
+mod exr_decode;
 mod file_ops;
 mod image_decode;
 mod ipc;

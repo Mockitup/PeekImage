@@ -24,6 +24,18 @@
       <button id="btn-actual" tabindex="-1" title="Actual Size (Ctrl+1)">
         <svg viewBox="0 0 16 16" fill="none"><text x="3" y="12" font-size="10.5" font-weight="700" font-family="system-ui,sans-serif" fill="currentColor">1:1</text></svg>
       </button>
+      <div class="titlebar-sep" id="exr-sep" style="display:none"></div>
+      <div id="exr-controls" style="display:none">
+        <select id="layer-select" tabindex="-1" title="Layer"></select>
+        <select id="channel-mode-select" tabindex="-1" title="Channel">
+          <option value="0">RGB</option>
+          <option value="1">R</option>
+          <option value="2">G</option>
+          <option value="3">B</option>
+          <option value="4">A</option>
+          <option value="5">Luma</option>
+        </select>
+      </div>
       <div class="titlebar-sep" id="hdr-sep" style="display:none"></div>
       <div id="hdr-controls" style="display:none">
         <span id="exposure-label">EV</span>

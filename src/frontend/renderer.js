@@ -33,6 +33,7 @@ var Renderer = (function() {
     'uniform float u_exposure;',
     'uniform bool u_isHdr;',
     'uniform int u_bgMode;',     // 0=checker, 1=black, 2=white
+    'uniform int u_channelMode;', // 0=RGB, 1=R, 2=G, 3=B, 4=A, 5=Luma
     'uniform vec3 u_checkerA;',
     'uniform vec3 u_checkerB;',
     '',
@@ -59,11 +60,16 @@ var Renderer = (function() {
     '',
     '  vec4 texel = texture(u_texture, uv);',
     '  vec3 color = texel.rgb;',
+    '  float a = texel.a;',
+    '  if (u_channelMode == 1) { color = vec3(color.r); a = 1.0; }',
+    '  else if (u_channelMode == 2) { color = vec3(color.g); a = 1.0; }',
+    '  else if (u_channelMode == 3) { color = vec3(color.b); a = 1.0; }',
+    '  else if (u_channelMode == 4) { color = vec3(a); a = 1.0; }',
+    '  else if (u_channelMode == 5) { color = vec3(dot(color, vec3(0.2126, 0.7152, 0.0722))); a = 1.0; }',
     '  if (u_isHdr) {',
     '    color = color * exp2(u_exposure);',
     '    color = clamp(color, 0.0, 1.0);',
     '  }',
-    '  float a = texel.a;',
     '  vec3 final_color = mix(bg, color, a);',
     '  fragColor = vec4(final_color, 1.0);',
     '}'
@@ -99,6 +105,7 @@ var Renderer = (function() {
   var u_exposure = gl.getUniformLocation(program, 'u_exposure');
   var u_isHdr = gl.getUniformLocation(program, 'u_isHdr');
   var u_bgMode = gl.getUniformLocation(program, 'u_bgMode');
+  var u_channelMode = gl.getUniformLocation(program, 'u_channelMode');
   var u_checkerA = gl.getUniformLocation(program, 'u_checkerA');
   var u_checkerB = gl.getUniformLocation(program, 'u_checkerB');
 
@@ -128,6 +135,7 @@ var Renderer = (function() {
   var _panX = 0, _panY = 0, _scale = 1;
   var _exposure = 0;
   var _bgMode = 0;
+  var _channelMode = 0;
   var _pixelData = null;
 
   function parseThemeColor(varName) {
@@ -198,6 +206,7 @@ var Renderer = (function() {
     gl.uniform1f(u_exposure, _exposure);
     gl.uniform1i(u_isHdr, _isHdr ? 1 : 0);
     gl.uniform1i(u_bgMode, _bgMode);
+    gl.uniform1i(u_channelMode, _channelMode);
     gl.uniform3f(u_checkerA, _checkerA[0], _checkerA[1], _checkerA[2]);
     gl.uniform3f(u_checkerB, _checkerB[0], _checkerB[1], _checkerB[2]);
 
@@ -249,6 +258,7 @@ var Renderer = (function() {
     setTransform: function(px, py, s) { _panX = px; _panY = py; _scale = s; },
     setExposure: function(ev) { _exposure = ev; },
     setBgMode: function(mode) { _bgMode = mode; },
+    setChannelMode: function(mode) { _channelMode = mode; },
     updateThemeColors: function() { updateThemeColors(); },
     render: render,
     resize: resize,

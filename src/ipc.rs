@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use tao::window::Window;
 use wry::WebView;
 
+use crate::exr_decode;
 use crate::file_ops;
 use crate::image_decode;
 use crate::state::AppState;
@@ -17,6 +18,8 @@ struct IpcMessage {
     title: Option<String>,
     #[serde(default)]
     exposure: Option<f32>,
+    #[serde(default)]
+    layer: Option<String>,
 }
 
 pub fn handle_ipc_message(
@@ -145,6 +148,11 @@ pub fn handle_ipc_message(
                 ),
             }
         }
+        "select_layer" => {
+            if let Some(layer_name) = parsed.layer {
+                select_exr_layer(webview, &layer_name, state);
+            }
+        }
         "ready" => {
             let pending = state.lock().unwrap().pending_file.take();
             if let Some(p) = pending {
@@ -174,6 +182,13 @@ fn load_and_send_image(
                 }
             };
 
+            // Parse EXR metadata if applicable
+            let exr_meta = if data.format == "EXR" {
+                exr_decode::parse_exr_metadata(path).ok()
+            } else {
+                None
+            };
+
             {
                 let mut st = state.lock().unwrap();
                 st.hdr_image = hdr_cache;
@@ -187,6 +202,8 @@ fn load_and_send_image(
                 st.image_is_hdr = data.is_hdr;
                 st.image_content_type = data.content_type;
                 st.image_bytes = Some(Arc::new(data.raw_bytes));
+                st.exr_metadata = exr_meta.clone();
+                st.exr_current_layer = String::new();
             }
 
             let filename = Path::new(path)
@@ -194,21 +211,24 @@ fn load_and_send_image(
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown");
 
-            send_to_js(
-                webview,
-                "image_ready",
-                &serde_json::json!({
-                    "path": path,
-                    "width": data.width,
-                    "height": data.height,
-                    "file_size": data.file_size,
-                    "format": data.format,
-                    "filename": filename,
-                    "index": index,
-                    "total": total,
-                    "is_hdr": data.is_hdr,
-                }),
-            );
+            let mut json = serde_json::json!({
+                "path": path,
+                "width": data.width,
+                "height": data.height,
+                "file_size": data.file_size,
+                "format": data.format,
+                "filename": filename,
+                "index": index,
+                "total": total,
+                "is_hdr": data.is_hdr,
+            });
+
+            if let Some(ref meta) = exr_meta {
+                json["exr_layers"] = serde_json::to_value(&meta.layers).unwrap_or_default();
+                json["exr_current_layer"] = serde_json::json!("");
+            }
+
+            send_to_js(webview, "image_ready", &json);
         }
         Err(e) => {
             send_to_js(
@@ -217,6 +237,59 @@ fn load_and_send_image(
                 &serde_json::json!({
                     "message": e
                 }),
+            );
+        }
+    }
+}
+
+fn select_exr_layer(
+    webview: &WebView,
+    layer_name: &str,
+    state: &Arc<Mutex<AppState>>,
+) {
+    let (path, meta) = {
+        let st = state.lock().unwrap();
+        let path = match &st.hdr_path {
+            Some(p) => p.clone(),
+            None => {
+                send_to_js(webview, "error", &serde_json::json!({"message": "No EXR file loaded"}));
+                return;
+            }
+        };
+        let meta = match &st.exr_metadata {
+            Some(m) => m.clone(),
+            None => {
+                send_to_js(webview, "error", &serde_json::json!({"message": "No EXR metadata"}));
+                return;
+            }
+        };
+        (path, meta)
+    };
+
+    match exr_decode::decode_exr_layer(&path, layer_name, &meta) {
+        Ok(raw_bytes) => {
+            {
+                let mut st = state.lock().unwrap();
+                st.image_bytes = Some(Arc::new(raw_bytes));
+                st.image_content_type = "application/x-float-rgba".to_string();
+                st.exr_current_layer = layer_name.to_string();
+            }
+
+            send_to_js(
+                webview,
+                "layer_switched",
+                &serde_json::json!({
+                    "layer": layer_name,
+                    "width": meta.width,
+                    "height": meta.height,
+                }),
+            );
+        }
+        Err(e) => {
+            send_to_js(
+                webview,
+                "error",
+                &serde_json::json!({"message": e}),
             );
         }
     }
