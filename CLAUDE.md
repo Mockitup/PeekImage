@@ -4,9 +4,9 @@ A lightweight, single-file image viewer for Windows built with Rust.
 
 ## Architecture
 
-- **Rust backend**: tao (window management) + wry (WebView2) + rfd (file dialogs) + image crate (decoding)
+- **Rust backend**: tao (window management) + wry (WebView2) + rfd (file dialogs) + image crate (decoding) + exr crate (multi-channel EXR)
 - **Frontend**: Vanilla HTML/CSS/JS embedded via `include_str!()`, rendered in WebView2
-- **Rendering**: WebGL2 canvas with custom shaders for zoom/pan, transparency checkerboard, and HDR tone mapping
+- **Rendering**: WebGL2 canvas with custom shaders for zoom/pan, transparency checkerboard, HDR tone mapping, and channel solo modes
 - **IPC**: JS→Rust via `window.ipc.postMessage(JSON)`, Rust→JS via `evaluate_script("window.__fromRust(...)")`
 
 ## Project Structure
@@ -16,8 +16,9 @@ src/
   main.rs           - Window creation, WebView setup, event loop, HTML assembly
   ipc.rs            - IPC message dispatch, image loading, clipboard ops
   image_decode.rs   - Format detection, decoding pipeline, HDR float packing
+  exr_decode.rs     - Multi-channel EXR: metadata parsing, layer decoding
   file_ops.rs       - File dialog, folder browsing (sibling images)
-  state.rs          - AppState struct (image bytes, metadata, HDR cache)
+  state.rs          - AppState struct (image bytes, metadata, HDR cache, EXR state)
   window_state.rs   - Window position/size persistence
   frontend/
     index.html      - Shell with titlebar, viewport, statusbar
@@ -33,6 +34,8 @@ src/
 - Web-native formats (PNG/JPG/GIF/WebP/BMP/ICO) pass raw bytes through to the browser
 - Non-web formats (TIFF/TGA/PNM/QOI) are decoded via `image` crate and re-encoded as PNG
 - HDR/EXR are decoded to Float32Array RGBA and uploaded as GL_RGBA32F textures
+- Multi-channel EXR: layer browsing (dropdown + `[`/`]` keys), channel solo modes (R/G/B/A/Luma), supports both single-part (dot-prefixed channels) and multi-part (V-Ray, Arnold) EXR files
+- `Ctrl+A` toggles alpha channel visibility (renders pixels without alpha compositing)
 - Checker/black/white background modes cycle with `A` key
 - Window state saved to `dirs::config_dir()/peekimage/`
 

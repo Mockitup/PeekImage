@@ -14,6 +14,8 @@ Built with Rust + WebView2. No Electron, no framework bloat.
 
 - **Wide format support** — PNG, JPEG, GIF, WebP, SVG, BMP, ICO, TIFF, TGA, PNM, QOI, HDR, EXR
 - **HDR/EXR viewing** — Float32 rendering with exposure slider (EV -10 to +10)
+- **Multi-channel EXR** — Browse render layers (V-Ray, Arnold, etc.), solo R/G/B/A/Luma channels, supports single-part and multi-part EXR files
+- **Alpha toggle** — Show pixels with or without alpha compositing (`Ctrl+A`)
 - **Zoom & pan** — Scroll to zoom at cursor, drag to pan, fit-to-window / actual-size toggle
 - **Pixel inspection** — Hover to see RGBA values, hex code, and color swatch in the status bar
 - **Folder browsing** — Arrow keys to step through images in the same directory
@@ -35,7 +37,11 @@ Built with Rust + WebView2. No Electron, no framework bloat.
 | `Ctrl+1` | Actual size (1:1) |
 | `Ctrl++` / `Ctrl+-` | Zoom in / out |
 | `A` | Cycle background (checker → black → white) |
+| `Ctrl+A` | Toggle alpha channel visibility |
 | `E` | Reset HDR exposure to 0 |
+| `[` / `]` | Previous / next EXR layer |
+| `R` / `G` / `B` | Solo red / green / blue channel (EXR) |
+| `0` | Reset to RGB view (EXR) |
 | Double-click | Toggle fit / actual size |
 
 ## Building
