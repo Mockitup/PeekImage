@@ -56,7 +56,7 @@ pub fn parse_exr_metadata(path: &str) -> Result<ExrMetadata, String> {
         }
     }
 
-    let layers: Vec<ExrLayerInfo> = layer_map.into_iter().map(|(name, mut channels)| {
+    let mut layers: Vec<ExrLayerInfo> = layer_map.into_iter().map(|(name, mut channels)| {
         channels.sort();
         let layer_type = classify_channels(&channels);
         let display_name = if name.is_empty() {
@@ -66,6 +66,16 @@ pub fn parse_exr_metadata(path: &str) -> Result<ExrMetadata, String> {
         };
         ExrLayerInfo { name, display_name, channels, layer_type }
     }).collect();
+
+    // RGBA/RGB layers first, then alphabetical
+    fn sort_key(l: &ExrLayerInfo) -> (u8, &str) {
+        match l.layer_type.as_str() {
+            "rgba" => (0, &l.name),
+            "rgb" => (1, &l.name),
+            _ => (2, &l.name),
+        }
+    }
+    layers.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
 
     Ok(ExrMetadata { width, height, layers })
 }
