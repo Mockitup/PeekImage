@@ -273,6 +273,13 @@ document.addEventListener('keydown', function(e) {
   } else if (e.ctrlKey && e.key === '-') {
     e.preventDefault();
     Viewer.zoomOut();
+  } else if (e.key === 'a' && e.ctrlKey) {
+    e.preventDefault();
+    if (Renderer) {
+      Renderer.setIgnoreAlpha(!Renderer.getIgnoreAlpha());
+      Renderer.render();
+      showStatus(Renderer.getIgnoreAlpha() ? 'Alpha: off' : 'Alpha: on');
+    }
   } else if (e.key === 'a' || e.key === 'A') {
     if (e.ctrlKey) return;
     e.preventDefault();
