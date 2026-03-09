@@ -7,6 +7,9 @@ var Renderer = (function() {
   var floatExt = gl.getExtension('EXT_color_buffer_float');
   var floatLinear = gl.getExtension('OES_texture_float_linear');
 
+  // GPU texture size limit
+  var _maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+
   // Shader sources
   var VS_SRC = [
     '#version 300 es',
@@ -37,6 +40,9 @@ var Renderer = (function() {
     'uniform bool u_ignoreAlpha;',
     'uniform vec3 u_checkerA;',
     'uniform vec3 u_checkerB;',
+    'uniform vec2 u_tileOffset;',
+    'uniform vec2 u_tileSize;',
+    'uniform bool u_bgPass;',
     '',
     'vec3 checkerboard(vec2 pos) {',
     '  float size = 10.0;',
@@ -46,20 +52,25 @@ var Renderer = (function() {
     '}',
     '',
     'void main() {',
-    '  vec2 imgPos = (v_screenPos - u_transform.xy) / u_transform.z;',
-    '  vec2 uv = imgPos / u_imageSize;',
-    '',
     '  vec3 bg;',
     '  if (u_bgMode == 1) bg = vec3(0.0);',
     '  else if (u_bgMode == 2) bg = vec3(0.863, 0.878, 0.910);',
     '  else bg = checkerboard(v_screenPos);',
     '',
-    '  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {',
+    '  if (u_bgPass) {',
     '    fragColor = vec4(bg, 1.0);',
     '    return;',
     '  }',
     '',
-    '  vec4 texel = texture(u_texture, uv);',
+    '  vec2 imgPos = (v_screenPos - u_transform.xy) / u_transform.z;',
+    '',
+    '  vec2 tilePos = imgPos - u_tileOffset;',
+    '  vec2 tileUv = tilePos / u_tileSize;',
+    '  if (tileUv.x < 0.0 || tileUv.x > 1.0 || tileUv.y < 0.0 || tileUv.y > 1.0) {',
+    '    discard;',
+    '  }',
+    '',
+    '  vec4 texel = texture(u_texture, tileUv);',
     '  vec3 color = texel.rgb;',
     '  float a = texel.a;',
     '  if (u_channelMode == 1) { color = vec3(color.r); a = 1.0; }',
@@ -111,6 +122,9 @@ var Renderer = (function() {
   var u_ignoreAlpha = gl.getUniformLocation(program, 'u_ignoreAlpha');
   var u_checkerA = gl.getUniformLocation(program, 'u_checkerA');
   var u_checkerB = gl.getUniformLocation(program, 'u_checkerB');
+  var u_tileOffset = gl.getUniformLocation(program, 'u_tileOffset');
+  var u_tileSize = gl.getUniformLocation(program, 'u_tileSize');
+  var u_bgPass = gl.getUniformLocation(program, 'u_bgPass');
 
   // Fullscreen quad VAO
   var vao = gl.createVertexArray();
@@ -123,14 +137,6 @@ var Renderer = (function() {
   gl.enableVertexAttribArray(a_pos);
   gl.vertexAttribPointer(a_pos, 2, gl.FLOAT, false, 0, 0);
 
-  // Texture
-  var texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
   // State
   var _hasImage = false;
   var _isHdr = false;
@@ -141,6 +147,7 @@ var Renderer = (function() {
   var _channelMode = 0;
   var _ignoreAlpha = false;
   var _pixelData = null;
+  var _tiles = []; // [{texture, x, y, w, h}]
 
   function parseThemeColor(varName) {
     var val = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -199,11 +206,27 @@ var Renderer = (function() {
     updateQuad();
   }
 
+  function freeTiles() {
+    for (var i = 0; i < _tiles.length; i++) {
+      gl.deleteTexture(_tiles[i].texture);
+    }
+    _tiles = [];
+  }
+
+  function createTileTexture() {
+    var tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+
   function render() {
     if (!_hasImage) return;
     var dpr = window.devicePixelRatio || 1;
     resize();
 
+    // Common uniforms
     gl.uniform2f(u_resolution, canvas.width, canvas.height);
     gl.uniform2f(u_imageSize, _imageW, _imageH);
     gl.uniform3f(u_transform, _panX * dpr, _panY * dpr, _scale);
@@ -215,45 +238,107 @@ var Renderer = (function() {
     gl.uniform3f(u_checkerA, _checkerA[0], _checkerA[1], _checkerA[2]);
     gl.uniform3f(u_checkerB, _checkerB[0], _checkerB[1], _checkerB[2]);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.uniform1i(u_texture, 0);
-
     gl.bindVertexArray(vao);
+
+    // Background pass (draws bg everywhere, tiles overdraw with image)
+    gl.uniform1i(u_bgPass, 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.uniform1i(u_bgPass, 0);
+
+    // Tile passes
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(u_texture, 0);
+    for (var i = 0; i < _tiles.length; i++) {
+      var tile = _tiles[i];
+      gl.bindTexture(gl.TEXTURE_2D, tile.texture);
+      gl.uniform2f(u_tileOffset, tile.x, tile.y);
+      gl.uniform2f(u_tileSize, tile.w, tile.h);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
   }
 
   function uploadLDR(htmlImage) {
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, htmlImage);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    _imageW = htmlImage.naturalWidth || htmlImage.width;
-    _imageH = htmlImage.naturalHeight || htmlImage.height;
+    var w = htmlImage.naturalWidth || htmlImage.width;
+    var h = htmlImage.naturalHeight || htmlImage.height;
+    _imageW = w;
+    _imageH = h;
     _isHdr = false;
     _hasImage = true;
     _exposure = 0;
-    // Extract pixel data via offscreen canvas
-    var oc = document.createElement('canvas');
-    oc.width = _imageW;
-    oc.height = _imageH;
-    var ctx = oc.getContext('2d');
-    ctx.drawImage(htmlImage, 0, 0);
-    _pixelData = ctx.getImageData(0, 0, _imageW, _imageH).data;
+
+    freeTiles();
+
+    var tileW = Math.min(w, _maxTexSize);
+    var tileH = Math.min(h, _maxTexSize);
+
+    for (var ty = 0; ty < h; ty += tileH) {
+      for (var tx = 0; tx < w; tx += tileW) {
+        var tw = Math.min(tileW, w - tx);
+        var th = Math.min(tileH, h - ty);
+
+        var oc = document.createElement('canvas');
+        oc.width = tw;
+        oc.height = th;
+        var ctx = oc.getContext('2d');
+        ctx.drawImage(htmlImage, tx, ty, tw, th, 0, 0, tw, th);
+
+        var tex = createTileTexture();
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, oc);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+        _tiles.push({ texture: tex, x: tx, y: ty, w: tw, h: th });
+      }
+    }
+
+    // Extract pixel data for inspection
+    try {
+      var pc = document.createElement('canvas');
+      pc.width = w;
+      pc.height = h;
+      var pctx = pc.getContext('2d');
+      pctx.drawImage(htmlImage, 0, 0);
+      _pixelData = pctx.getImageData(0, 0, w, h).data;
+    } catch(e) {
+      _pixelData = null;
+    }
   }
 
   function uploadHDR(arrayBuffer, w, h) {
     var floatData = new Float32Array(arrayBuffer);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, floatData);
-    var minFilter = floatLinear ? gl.LINEAR : gl.NEAREST;
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     _imageW = w;
     _imageH = h;
     _isHdr = true;
     _hasImage = true;
     _exposure = 0;
+
+    freeTiles();
+
+    var tileW = Math.min(w, _maxTexSize);
+    var tileH = Math.min(h, _maxTexSize);
+
+    for (var ty = 0; ty < h; ty += tileH) {
+      for (var tx = 0; tx < w; tx += tileW) {
+        var tw = Math.min(tileW, w - tx);
+        var th = Math.min(tileH, h - ty);
+
+        var tileData = new Float32Array(tw * th * 4);
+        for (var row = 0; row < th; row++) {
+          var srcOffset = ((ty + row) * w + tx) * 4;
+          var dstOffset = row * tw * 4;
+          tileData.set(floatData.subarray(srcOffset, srcOffset + tw * 4), dstOffset);
+        }
+
+        var tex = createTileTexture();
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, tw, th, 0, gl.RGBA, gl.FLOAT, tileData);
+        var minFilter = floatLinear ? gl.LINEAR : gl.NEAREST;
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+        _tiles.push({ texture: tex, x: tx, y: ty, w: tw, h: th });
+      }
+    }
+
     _pixelData = floatData;
   }
 
@@ -270,7 +355,7 @@ var Renderer = (function() {
     render: render,
     resize: resize,
     hasImage: function() { return _hasImage; },
-    clearImage: function() { _hasImage = false; _pixelData = null; },
+    clearImage: function() { _hasImage = false; _pixelData = null; freeTiles(); },
     getPixel: function(x, y) {
       if (!_pixelData || x < 0 || y < 0 || x >= _imageW || y >= _imageH) return null;
       var idx = (y * _imageW + x) * 4;
