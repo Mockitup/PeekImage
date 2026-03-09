@@ -43,6 +43,13 @@ var Renderer = (function() {
     'uniform vec2 u_tileOffset;',
     'uniform vec2 u_tileSize;',
     'uniform bool u_bgPass;',
+    'uniform bool u_srgb;',
+    '',
+    'vec3 linearToSrgb(vec3 c) {',
+    '  vec3 lo = c * 12.92;',
+    '  vec3 hi = 1.055 * pow(c, vec3(1.0/2.4)) - 0.055;',
+    '  return mix(lo, hi, step(vec3(0.0031308), c));',
+    '}',
     '',
     'vec3 checkerboard(vec2 pos) {',
     '  float size = 10.0;',
@@ -80,6 +87,7 @@ var Renderer = (function() {
     '  else if (u_channelMode == 5) { color = vec3(dot(color, vec3(0.2126, 0.7152, 0.0722))); a = 1.0; }',
     '  if (u_isHdr) {',
     '    color = color * exp2(u_exposure);',
+    '    if (u_srgb) color = linearToSrgb(color);',
     '    color = clamp(color, 0.0, 1.0);',
     '  }',
     '  if (u_ignoreAlpha) a = 1.0;',
@@ -125,6 +133,7 @@ var Renderer = (function() {
   var u_tileOffset = gl.getUniformLocation(program, 'u_tileOffset');
   var u_tileSize = gl.getUniformLocation(program, 'u_tileSize');
   var u_bgPass = gl.getUniformLocation(program, 'u_bgPass');
+  var u_srgb = gl.getUniformLocation(program, 'u_srgb');
 
   // Fullscreen quad VAO
   var vao = gl.createVertexArray();
@@ -146,6 +155,7 @@ var Renderer = (function() {
   var _bgMode = 0;
   var _channelMode = 0;
   var _ignoreAlpha = false;
+  var _srgb = false;
   var _pixelData = null;
   var _tiles = []; // [{texture, x, y, w, h}]
 
@@ -235,6 +245,7 @@ var Renderer = (function() {
     gl.uniform1i(u_bgMode, _bgMode);
     gl.uniform1i(u_channelMode, _channelMode);
     gl.uniform1i(u_ignoreAlpha, _ignoreAlpha ? 1 : 0);
+    gl.uniform1i(u_srgb, _srgb ? 1 : 0);
     gl.uniform3f(u_checkerA, _checkerA[0], _checkerA[1], _checkerA[2]);
     gl.uniform3f(u_checkerB, _checkerB[0], _checkerB[1], _checkerB[2]);
 
@@ -351,6 +362,8 @@ var Renderer = (function() {
     setChannelMode: function(mode) { _channelMode = mode; },
     setIgnoreAlpha: function(v) { _ignoreAlpha = v; },
     getIgnoreAlpha: function() { return _ignoreAlpha; },
+    setSrgb: function(v) { _srgb = v; },
+    getSrgb: function() { return _srgb; },
     updateThemeColors: function() { updateThemeColors(); },
     render: render,
     resize: resize,

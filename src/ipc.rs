@@ -86,6 +86,13 @@ pub fn handle_ipc_message(
         }
         "window_minimize" => window.set_minimized(true),
         "window_maximize" => window.set_maximized(!window.is_maximized()),
+        "window_fullscreen" => {
+            if window.fullscreen().is_some() {
+                window.set_fullscreen(None);
+            } else {
+                window.set_fullscreen(Some(tao::window::Fullscreen::Borderless(None)));
+            }
+        }
         "window_close" => {
             let inner_size = window.inner_size();
             let outer_pos = window.outer_position().unwrap_or_default();

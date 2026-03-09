@@ -68,14 +68,14 @@ pub fn apply_exposure(
 }
 
 fn pack_rgba32f(img: &image::DynamicImage) -> Vec<u8> {
-    let rgb = img.to_rgb32f();
-    let (w, h) = (rgb.width(), rgb.height());
+    let rgba = img.to_rgba32f();
+    let (w, h) = (rgba.width(), rgba.height());
     let mut buf = Vec::with_capacity((w * h * 16) as usize);
-    for pixel in rgb.pixels() {
+    for pixel in rgba.pixels() {
         buf.extend_from_slice(&pixel[0].to_le_bytes());
         buf.extend_from_slice(&pixel[1].to_le_bytes());
         buf.extend_from_slice(&pixel[2].to_le_bytes());
-        buf.extend_from_slice(&1.0f32.to_le_bytes());
+        buf.extend_from_slice(&pixel[3].to_le_bytes());
     }
     buf
 }
